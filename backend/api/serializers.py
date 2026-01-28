@@ -1,9 +1,11 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import Event, SavedEvent
 from django.contrib.auth.password_validation import validate_password
 
 User = get_user_model()
 
+#User serializer classes
 
 class UserSignupSerializer(serializers.ModelSerializer):
     """
@@ -66,3 +68,76 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'email', 'username', 'is_admin']
         read_only_fields = ['id']
+
+# Event serializer classes
+
+class EventSerializer(serializers.ModelSerializer):
+    """
+    Serializer for Event model.
+    Shows event details including creator info.
+    """
+    creator_name = serializers.CharField(source='creator.username', read_only=True)
+    creator_email = serializers.CharField(source='creator.email', read_only=True)
+    is_saved = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Event
+        fields = [
+            'id',
+            'title',
+            'description',
+            'date',
+            'location',
+            'creator',
+            'creator_name',
+            'creator_email',
+            'is_approved',
+            'is_saved',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'creator', 'created_at', 'updated_at', 'is_approved']
+    
+    def get_is_saved(self, obj):
+        """
+        Check if current user has saved this event.
+        """
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return SavedEvent.objects.filter(
+                user=request.user,
+                event=obj
+            ).exists()
+        return False
+
+
+class EventCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer for creating events.
+    Simpler - only needs basic fields.
+    """
+    class Meta:
+        model = Event
+        fields = ['title', 'description', 'date', 'location']
+    
+    def create(self, validated_data):
+        """
+        Create event with the authenticated user as creator.
+        Events start as not approved.
+        """
+        request = self.context.get('request')
+        validated_data['creator'] = request.user
+        validated_data['is_approved'] = False  # Needs admin approval
+        return super().create(validated_data)
+
+
+class SavedEventSerializer(serializers.ModelSerializer):
+    """
+    Serializer for saved events.
+    """
+    event = EventSerializer(read_only=True)
+    
+    class Meta:
+        model = SavedEvent
+        fields = ['id', 'event', 'saved_at']
+        read_only_fields = ['id', 'saved_at']
